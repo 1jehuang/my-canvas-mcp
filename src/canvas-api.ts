@@ -87,6 +87,25 @@ export class CanvasAPI {
     }
   }
 
+  async downloadFile(url: string, destPath: string): Promise<string> {
+    const resp = await this.client.get(url, { responseType: "stream" });
+    const writer = fs.createWriteStream(destPath);
+    resp.data.pipe(writer);
+    return new Promise((resolve, reject) => {
+      writer.on("finish", () => resolve(destPath));
+      writer.on("error", reject);
+    });
+  }
+
+  async put<T = unknown>(path: string, data?: Record<string, unknown>): Promise<T> {
+    try {
+      const resp = await this.client.put(path, data);
+      return resp.data as T;
+    } catch (err) {
+      throw this.handleError(err);
+    }
+  }
+
   private handleError(err: unknown): Error {
     if (err instanceof AxiosError) {
       const status = err.response?.status;

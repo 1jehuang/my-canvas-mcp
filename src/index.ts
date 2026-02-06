@@ -297,6 +297,63 @@ server.tool(
   }
 );
 
+// 19. Download a course file
+server.tool(
+  "download_file",
+  "Download a course file to a local path",
+  {
+    course_id: z.number().describe("The Canvas course ID"),
+    file_id: z.number().describe("The file ID (from get_course_files)"),
+    dest_dir: z
+      .string()
+      .optional()
+      .describe("Directory to save to (defaults to ~/Downloads)"),
+  },
+  async ({ course_id, file_id, dest_dir }) => {
+    const fileMeta = (await api.get(`/courses/${course_id}/files/${file_id}`)) as {
+      filename: string;
+      url: string;
+    };
+    const dir = dest_dir || `${process.env.HOME}/Downloads`;
+    const destPath = `${dir}/${fileMeta.filename}`;
+    await api.downloadFile(fileMeta.url, destPath);
+    return {
+      content: [{ type: "text", text: `Downloaded to ${destPath}` }],
+    };
+  }
+);
+
+// 20. Add a comment on your own submission
+server.tool(
+  "add_submission_comment",
+  "Add a comment on your own submission for an assignment",
+  {
+    course_id: z.number().describe("The Canvas course ID"),
+    assignment_id: z.number().describe("The assignment ID"),
+    comment: z.string().describe("The comment text"),
+  },
+  async ({ course_id, assignment_id, comment }) => {
+    const data = await api.put(
+      `/courses/${course_id}/assignments/${assignment_id}/submissions/self`,
+      { comment: { text_comment: comment } }
+    );
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
+// 21. Get course syllabus
+server.tool(
+  "get_syllabus",
+  "Get the syllabus for a course",
+  { course_id: z.number().describe("The Canvas course ID") },
+  async ({ course_id }) => {
+    const data = await api.get(`/courses/${course_id}`, {
+      "include[]": "syllabus_body",
+    });
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);
