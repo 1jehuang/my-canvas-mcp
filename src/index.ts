@@ -9,10 +9,22 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
+function pick(obj: Record<string, unknown>, keys: string[]): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const key of keys) {
+    if (key in obj) result[key] = obj[key];
+  }
+  return result;
+}
+
+function json(data: unknown): { content: Array<{ type: "text"; text: string }> } {
+  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+}
+
 // 1. Get my profile
 server.tool("get_my_profile", "Get your own Canvas user profile information", {}, async () => {
-  const data = await api.get("/users/self/profile");
-  return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  const data = await api.get<Record<string, unknown>>("/users/self/profile");
+  return json(pick(data, ["id", "name", "login_id", "primary_email", "time_zone"]));
 });
 
 // 2. Get my courses
@@ -21,11 +33,11 @@ server.tool(
   "Get all courses you are enrolled in",
   {},
   async () => {
-    const data = await api.getPaginated("/courses", {
+    const data = await api.getPaginated<Record<string, unknown>>("/courses", {
       enrollment_state: "active",
       include: ["term", "total_scores"],
     });
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(data.map(c => pick(c, ["id", "name", "course_code", "term", "enrollments"])));
   }
 );
 
@@ -35,10 +47,13 @@ server.tool(
   "Get all assignments for a specific course",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.getPaginated(`/courses/${course_id}/assignments`, {
+    const data = await api.getPaginated<Record<string, unknown>>(`/courses/${course_id}/assignments`, {
       order_by: "due_at",
     });
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(data.map(a => pick(a, [
+      "id", "name", "due_at", "lock_at", "unlock_at",
+      "points_possible", "submission_types", "has_submitted_submissions",
+    ])));
   }
 );
 
@@ -51,10 +66,14 @@ server.tool(
     assignment_id: z.number().describe("The assignment ID"),
   },
   async ({ course_id, assignment_id }) => {
-    const data = await api.get(
+    const data = await api.get<Record<string, unknown>>(
       `/courses/${course_id}/assignments/${assignment_id}`
     );
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(pick(data, [
+      "id", "name", "description", "due_at", "lock_at", "unlock_at",
+      "points_possible", "submission_types", "allowed_extensions",
+      "has_submitted_submissions", "rubric",
+    ]));
   }
 );
 
@@ -64,14 +83,26 @@ server.tool(
   "Get your own submissions for all assignments in a course",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.getPaginated(
+    const data = await api.getPaginated<Record<string, unknown>>(
       `/courses/${course_id}/students/submissions`,
       {
         "student_ids[]": "self",
         include: ["assignment", "submission_comments"],
       }
     );
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(data.map(s => {
+      const base = pick(s, [
+        "id", "assignment_id", "score", "grade", "submitted_at",
+        "workflow_state", "late", "missing", "submission_comments",
+      ]);
+      const assignment = s.assignment as Record<string, unknown> | undefined;
+      if (assignment) {
+        base.assignment_name = assignment.name;
+        base.assignment_due_at = assignment.due_at;
+        base.assignment_points = assignment.points_possible;
+      }
+      return base;
+    }));
   }
 );
 
@@ -84,11 +115,15 @@ server.tool(
     assignment_id: z.number().describe("The assignment ID"),
   },
   async ({ course_id, assignment_id }) => {
-    const data = await api.get(
+    const data = await api.get<Record<string, unknown>>(
       `/courses/${course_id}/assignments/${assignment_id}/submissions/self`,
       { include: ["submission_comments"] }
     );
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(pick(data, [
+      "id", "assignment_id", "score", "grade", "submitted_at",
+      "workflow_state", "late", "missing", "submission_comments",
+      "body", "url", "attachments",
+    ]));
   }
 );
 
@@ -98,8 +133,11 @@ server.tool(
   "Get your upcoming assignments and events",
   {},
   async () => {
-    const data = await api.get("/users/self/upcoming_events");
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    const data = await api.get<Record<string, unknown>[]>("/users/self/upcoming_events");
+    return json(data.map(e => pick(e, [
+      "id", "title", "start_at", "end_at", "type",
+      "assignment", "context_name",
+    ])));
   }
 );
 
@@ -109,8 +147,11 @@ server.tool(
   "Get your Canvas todo items",
   {},
   async () => {
-    const data = await api.get("/users/self/todo");
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    const data = await api.get<Record<string, unknown>[]>("/users/self/todo");
+    return json(data.map(t => pick(t, [
+      "type", "assignment", "context_name", "course_id",
+      "ignore", "ignore_permanently", "html_url",
+    ])));
   }
 );
 
@@ -120,8 +161,8 @@ server.tool(
   "Get all modules for a course",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.getPaginated(`/courses/${course_id}/modules`);
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    const data = await api.getPaginated<Record<string, unknown>>(`/courses/${course_id}/modules`);
+    return json(data.map(m => pick(m, ["id", "name", "position", "state", "items_count"])));
   }
 );
 
@@ -134,10 +175,10 @@ server.tool(
     module_id: z.number().describe("The module ID"),
   },
   async ({ course_id, module_id }) => {
-    const data = await api.getPaginated(
+    const data = await api.getPaginated<Record<string, unknown>>(
       `/courses/${course_id}/modules/${module_id}/items`
     );
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(data.map(i => pick(i, ["id", "title", "type", "position", "html_url", "content_id"])));
   }
 );
 
@@ -147,8 +188,11 @@ server.tool(
   "Get files available in a course",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.getPaginated(`/courses/${course_id}/files`);
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    const data = await api.getPaginated<Record<string, unknown>>(`/courses/${course_id}/files`);
+    return json(data.map(f => pick(f, [
+      "id", "display_name", "filename", "size", "content-type",
+      "created_at", "updated_at",
+    ])));
   }
 );
 
@@ -163,8 +207,8 @@ server.tool(
       .describe('The page URL slug (e.g., "syllabus" or "course-overview")'),
   },
   async ({ course_id, page_url }) => {
-    const data = await api.get(`/courses/${course_id}/pages/${page_url}`);
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    const data = await api.get<Record<string, unknown>>(`/courses/${course_id}/pages/${page_url}`);
+    return json(pick(data, ["title", "body", "created_at", "updated_at"]));
   }
 );
 
@@ -174,10 +218,10 @@ server.tool(
   "Get announcements for a course (instructor-posted)",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.getPaginated("/announcements", {
+    const data = await api.getPaginated<Record<string, unknown>>("/announcements", {
       "context_codes[]": `course_${course_id}`,
     });
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(data.map(a => pick(a, ["id", "title", "message", "posted_at"])));
   }
 );
 
@@ -272,10 +316,10 @@ server.tool(
   "List discussion topics for a course (topic titles and prompts, not student replies)",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.getPaginated(
+    const data = await api.getPaginated<Record<string, unknown>>(
       `/courses/${course_id}/discussion_topics`
     );
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(data.map(d => pick(d, ["id", "title", "message", "posted_at", "due_at"])));
   }
 );
 
@@ -347,10 +391,10 @@ server.tool(
   "Get the syllabus for a course",
   { course_id: z.number().describe("The Canvas course ID") },
   async ({ course_id }) => {
-    const data = await api.get(`/courses/${course_id}`, {
+    const data = await api.get<Record<string, unknown>>(`/courses/${course_id}`, {
       "include[]": "syllabus_body",
     });
-    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+    return json(pick(data, ["id", "name", "syllabus_body"]));
   }
 );
 
