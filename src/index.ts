@@ -181,6 +181,122 @@ server.tool(
   }
 );
 
+// 14. Submit assignment — text entry
+server.tool(
+  "submit_assignment_text",
+  "Submit a text entry for an assignment",
+  {
+    course_id: z.number().describe("The Canvas course ID"),
+    assignment_id: z.number().describe("The assignment ID"),
+    body: z.string().describe("The text/HTML body to submit"),
+  },
+  async ({ course_id, assignment_id, body }) => {
+    const data = await api.post(
+      `/courses/${course_id}/assignments/${assignment_id}/submissions`,
+      {
+        submission: {
+          submission_type: "online_text_entry",
+          body,
+        },
+      }
+    );
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
+// 15. Submit assignment — URL
+server.tool(
+  "submit_assignment_url",
+  "Submit a URL for an assignment",
+  {
+    course_id: z.number().describe("The Canvas course ID"),
+    assignment_id: z.number().describe("The assignment ID"),
+    url: z.string().describe("The URL to submit"),
+  },
+  async ({ course_id, assignment_id, url }) => {
+    const data = await api.post(
+      `/courses/${course_id}/assignments/${assignment_id}/submissions`,
+      {
+        submission: {
+          submission_type: "online_url",
+          url,
+        },
+      }
+    );
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
+// 16. Submit assignment — file upload
+server.tool(
+  "submit_assignment_file",
+  "Upload and submit a file for an assignment. Provide the absolute path to the file on disk.",
+  {
+    course_id: z.number().describe("The Canvas course ID"),
+    assignment_id: z.number().describe("The assignment ID"),
+    file_path: z.string().describe("Absolute path to the file to upload"),
+  },
+  async ({ course_id, assignment_id, file_path }) => {
+    const fileName = file_path.split("/").pop() || "file";
+
+    // Step 1: Request upload URL
+    const uploadRequest = (await api.post(
+      `/courses/${course_id}/assignments/${assignment_id}/submissions/self/files`,
+      { name: fileName }
+    )) as { upload_url: string; upload_params: Record<string, string> };
+
+    // Step 2: Upload the file
+    const uploadResult = (await api.uploadFile(
+      uploadRequest.upload_url,
+      uploadRequest.upload_params,
+      file_path
+    )) as { id: number };
+
+    // Step 3: Submit with the file ID
+    const data = await api.post(
+      `/courses/${course_id}/assignments/${assignment_id}/submissions`,
+      {
+        submission: {
+          submission_type: "online_upload",
+          file_ids: [uploadResult.id],
+        },
+      }
+    );
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
+// 17. List discussion topics (topic info only — no student replies)
+server.tool(
+  "get_discussion_topics",
+  "List discussion topics for a course (topic titles and prompts, not student replies)",
+  { course_id: z.number().describe("The Canvas course ID") },
+  async ({ course_id }) => {
+    const data = await api.getPaginated(
+      `/courses/${course_id}/discussion_topics`
+    );
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
+// 18. Post a discussion entry
+server.tool(
+  "post_discussion_entry",
+  "Post a new entry to a discussion topic",
+  {
+    course_id: z.number().describe("The Canvas course ID"),
+    topic_id: z.number().describe("The discussion topic ID"),
+    message: z.string().describe("The message/body of your post (HTML allowed)"),
+  },
+  async ({ course_id, topic_id, message }) => {
+    const data = await api.post(
+      `/courses/${course_id}/discussion_topics/${topic_id}/entries`,
+      { message }
+    );
+    return { content: [{ type: "text", text: JSON.stringify(data, null, 2) }] };
+  }
+);
+
 async function main() {
   const transport = new StdioServerTransport();
   await server.connect(transport);

@@ -1,4 +1,7 @@
 import axios, { AxiosInstance, AxiosError } from "axios";
+import * as fs from "fs";
+import * as path from "path";
+import FormData from "form-data";
 
 export class CanvasAPI {
   private client: AxiosInstance;
@@ -54,6 +57,34 @@ export class CanvasAPI {
       throw this.handleError(err);
     }
     return allResults;
+  }
+
+  async post<T = unknown>(path: string, data?: Record<string, unknown>): Promise<T> {
+    try {
+      const resp = await this.client.post(path, data);
+      return resp.data as T;
+    } catch (err) {
+      throw this.handleError(err);
+    }
+  }
+
+  async uploadFile(uploadUrl: string, uploadParams: Record<string, string>, filePath: string): Promise<unknown> {
+    const form = new FormData();
+    for (const [key, value] of Object.entries(uploadParams)) {
+      form.append(key, value);
+    }
+    form.append("file", fs.createReadStream(filePath), path.basename(filePath));
+
+    try {
+      const resp = await axios.post(uploadUrl, form, {
+        headers: form.getHeaders(),
+        maxRedirects: 0,
+        validateStatus: (status) => status < 400,
+      });
+      return resp.data;
+    } catch (err) {
+      throw this.handleError(err);
+    }
   }
 
   private handleError(err: unknown): Error {
